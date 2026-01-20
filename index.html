@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Keyboard Dashboard</title>
+    <style>
+        :root {
+            --bg: #121212;
+            --fg: #e0e0e0;
+            --accent: #00ff9d;
+            --dim: #666;
+            --warn: #ff4d4d;
+            --font: 'Courier New', Courier, monospace;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            background-color: var(--bg);
+            color: var(--fg);
+            font-family: var(--font);
+            margin: 0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* --- Layout --- */
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            height: 100%;
+            padding: 20px;
+            gap: 20px;
+        }
+
+        .panel {
+            border: 1px solid #333;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            position: relative;
+            background: #1a1a1a;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .panel.active {
+            border-color: var(--accent);
+            box-shadow: 0 0 15px rgba(0, 255, 157, 0.1);
+            z-index: 10;
+        }
+
+        h2 {
+            font-size: 1rem;
+            border-bottom: 1px solid #333;
+            margin-top: 0;
+            padding-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--dim);
+        }
+
+        .panel.active h2 { color: var(--accent); }
+
+        /* --- List Items --- */
+        ul { list-style: none; padding: 0; margin: 0; }
+        
+        li {
+            padding: 10px;
+            margin-bottom: 4px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-radius: 4px;
+            border: 1px solid transparent;
+        }
+
+        li.selected {
+            background-color: var(--accent);
+            color: var(--bg);
+            font-weight: bold;
+            border-color: var(--accent);
+        }
+
+        .meta { font-size: 0.75rem; color: var(--dim); margin-left: 10px; min-width: 40px; text-align: right; }
+        li.selected .meta { color: #222; opacity: 0.8; }
+
+        .shortcut-hint {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            font-size: 0.8rem;
+            color: var(--dim);
+            border: 1px solid #333;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+        
+        .panel.active .shortcut-hint { color: var(--accent); border-color: var(--accent); }
+
+        /* --- Modal --- */
+        #modal-overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.85);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+            backdrop-filter: blur(2px);
+        }
+        .hidden { display: none !important; }
+        
+        #modal-box {
+            background: #1e1e1e;
+            border: 2px solid var(--accent);
+            padding: 30px;
+            width: 450px;
+            box-shadow: 0 0 30px rgba(0,0,0,0.5);
+        }
+
+        h3 { margin-top: 0; color: var(--accent); }
+
+        input {
+            width: 100%;
+            background: #2a2a2a;
+            border: 1px solid #444;
+            color: white;
+            padding: 12px;
+            margin-bottom: 15px;
+            font-family: var(--font);
+            font-size: 1rem;
+        }
+        input:focus { outline: 1px solid var(--accent); border-color: var(--accent); }
+
+        .status-msg { margin-top: 10px; font-size: 0.85rem; color: var(--dim); }
+        .error { color: var(--warn); }
+
+        /* --- Help --- */
+        #help {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            background: #1e1e1e;
+            padding: 15px;
+            border: 1px solid #444;
+            font-size: 0.8rem;
+            line-height: 1.5;
+            opacity: 0.9;
+            z-index: 50;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <div id="panel-bookmarks" class="panel active">
+            <span class="shortcut-hint">[b]</span>
+            <h2>Bookmarks (<span id="bm-count">0</span>/15)</h2>
+            <ul id="list-bookmarks"></ul>
+        </div>
+
+        <div id="panel-important" class="panel">
+            <span class="shortcut-hint">[i]</span>
+            <h2>Important</h2>
+            <ul id="list-important"></ul>
+        </div>
+
+        <div id="panel-history" class="panel">
+            <span class="shortcut-hint">[h]</span>
+            <h2>History</h2>
+            <ul id="list-history"></ul>
+        </div>
+    </div>
+
+    <div id="help">
+        <strong style="color:var(--accent)">COMMANDS</strong><br>
+        [↑/↓] Navigate List<br>
+        [Enter] Open Link<br>
+        [1-9] Select Item<br>
+        [Ctrl+1-9] Open Item<br>
+        -----------------------<br>
+        [b] Focus Bookmarks<br>
+        [i] Focus Important<br>
+        [h] Focus History<br>
+        -----------------------<br>
+        [n] Add New Link<br>
+        [x] Delete Link<br>
+        [?] Toggle This Menu
+    </div>
+
+    <div id="modal-overlay" class="hidden">
+        <div id="modal-box">
+            <h3 id="modal-title-text">Add Link</h3>
+            <input type="text" id="input-title" placeholder="Title (e.g., GitHub)">
+            <input type="text" id="input-url" placeholder="URL (e.g., github.com)">
+            <div class="status-msg" id="modal-msg">Press [Enter] to save, [Esc] to cancel</div>
+        </div>
+    </div>
+
+<script>
+    // --- Demo Data Generation ---
+    // This creates default data if the user has never visited before.
+    const DEMO_BOOKMARKS = [
+        { title: "Google", url: "https://google.com" },
+        { title: "YouTube", url: "https://youtube.com" },
+        { title: "GitHub", url: "https://github.com" },
+        { title: "ChatGPT", url: "https://chatgpt.com" },
+        { title: "Reddit", url: "https://reddit.com" },
+        { title: "Gmail", url: "https://mail.google.com" },
+        { title: "Twitter/X", url: "https://x.com" }
+    ];
+
+    const DEMO_IMPORTANT = [
+        { title: "Passport Renewal", url: "https://travel.state.gov" },
+        { title: "Tax Portal", url: "https://irs.gov" },
+        { title: "Emergency Contacts", url: "about:blank" },
+        { title: "Router Settings", url: "http://192.168.1.1" }
+    ];
+
+    const DEMO_HISTORY = [
+        { title: "Stack Overflow - CSS Grid", url: "https://stackoverflow.com", time: Date.now() - 120000 },
+        { title: "MDN Web Docs", url: "https://developer.mozilla.org", time: Date.now() - 3600000 },
+        { title: "Weather Forecast", url: "https://weather.com", time: Date.now() - 86400000 }
+    ];
+
+    // --- State Management ---
+    
+    // Helper to load or default
+    function loadState(key, defaultData) {
+        const stored = localStorage.getItem(key);
+        return stored ? JSON.parse(stored) : defaultData;
+    }
+
+    const STATE = {
+        bookmarks: loadState('kb_bookmarks', DEMO_BOOKMARKS),
+        important: loadState('kb_important', DEMO_IMPORTANT),
+        history: loadState('kb_history', DEMO_HISTORY),
+        activePanel: 'bookmarks', // bookmarks, important, history
+        selectedIndex: 0,
+        modalOpen: false
+    };
+
+    // --- DOM Elements ---
+    const panels = {
+        bookmarks: document.getElementById('panel-bookmarks'),
+        important: document.getElementById('panel-important'),
+        history: document.getElementById('panel-history')
+    };
+    const lists = {
+        bookmarks: document.getElementById('list-bookmarks'),
+        important: document.getElementById('list-important'),
+        history: document.getElementById('list-history')
+    };
+    const modal = {
+        overlay: document.getElementById('modal-overlay'),
+        header: document.getElementById('modal-title-text'),
+        title: document.getElementById('input-title'),
+        url: document.getElementById('input-url'),
+        msg: document.getElementById('modal-msg')
+    };
+
+    // --- Core Functions ---
+
+    function saveToStorage() {
+        localStorage.setItem('kb_bookmarks', JSON.stringify(STATE.bookmarks));
+        localStorage.setItem('kb_important', JSON.stringify(STATE.important));
+        localStorage.setItem('kb_history', JSON.stringify(STATE.history));
+    }
+
+    function render() {
+        // Update Bookmark Count
+        document.getElementById('bm-count').innerText = STATE.bookmarks.length;
+
+        // Render Lists
+        renderList('bookmarks', STATE.bookmarks);
+        renderList('important', STATE.important);
+        renderList('history', STATE.history);
+
+        // Update Panel Styles
+        Object.keys(panels).forEach(key => {
+            if (key === STATE.activePanel) {
+                panels[key].classList.add('active');
+            } else {
+                panels[key].classList.remove('active');
+            }
+        });
+    }
+
+    function renderList(type, data) {
+        const ul = lists[type];
+        ul.innerHTML = '';
+        
+        if (data.length === 0) {
+            ul.innerHTML = '<li style="color:#444; cursor:default; border:none;">(Empty)</li>';
+            return;
+        }
+
+        data.forEach((item, index) => {
+            const li = document.createElement('li');
+            
+            // Format time for history
+            let meta = '';
+            if (type === 'history' && item.time) {
+                const d = new Date(item.time);
+                // Simple relative time check
+                const now = new Date();
+                if (d.toDateString() === now.toDateString()) {
+                    meta = `${d.getHours()}:${d.getMinutes().toString().padStart(2, '0')}`;
+                } else {
+                    meta = `${d.getMonth()+1}/${d.getDate()}`;
+                }
+            } else {
+                meta = index < 9 ? `[${index + 1}]` : '';
+            }
+
+            // Truncate URL for display logic could go here, but we use title
+            li.innerHTML = `<span>${item.title}</span> <span class="meta">${meta}</span>`;
+            
+            if (STATE.activePanel === type && STATE.selectedIndex === index) {
+                li.classList.add('selected');
+                li.scrollIntoView({ block: "nearest" });
+            }
+            
+            // Mouse click support
+            li.onclick = () => {
+                STATE.activePanel = type;
+                STATE.selectedIndex = index;
+                openLink(index);
+            };
+            
+            ul.appendChild(li);
+        });
+    }
+
+    // --- Logic ---
+
+    function setActivePanel(panelName) {
+        STATE.activePanel = panelName;
+        STATE.selectedIndex = 0;
+        render();
+    }
+
+    function switchPanel(direction) {
+        const order = ['bookmarks', 'important', 'history'];
+        let idx = order.indexOf(STATE.activePanel);
+        idx += direction;
+        if (idx < 0) idx = order.length - 1;
+        if (idx >= order.length) idx = 0;
+        setActivePanel(order[idx]);
+    }
+
+    function moveSelection(direction) {
+        const list = STATE[STATE.activePanel];
+        if (!list.length) return;
+
+        STATE.selectedIndex += direction;
+        
+        // Loop around
+        if (STATE.selectedIndex < 0) STATE.selectedIndex = list.length - 1;
+        if (STATE.selectedIndex >= list.length) STATE.selectedIndex = 0;
+        
+        render();
+    }
+
+    function addToHistory(title, url) {
+        // Remove duplicate if exists (to bump to top)
+        STATE.history = STATE.history.filter(i => i.url !== url);
+        
+        STATE.history.unshift({
+            title: title,
+            url: url,
+            time: Date.now()
+        });
+
+        // Limit history to 50 items
+        if (STATE.history.length > 50) STATE.history.pop();
+        
+        saveToStorage();
+    }
+
+    function openLink(index = STATE.selectedIndex) {
+        const list = STATE[STATE.activePanel];
+        if (!list[index]) return;
+
+        const item = list[index];
+        
+        // If we are opening a bookmark or important link, add it to history
+        if (STATE.activePanel !== 'history') {
+            addToHistory(item.title, item.url);
+        } else {
+            // Even if opening from history, update time to now
+            addToHistory(item.title, item.url);
+        }
+
+        window.open(item.url, '_blank');
+        render(); 
+    }
+
+    function deleteItem() {
+        if (STATE.activePanel === 'history') {
+             if (confirm(`Clear this history item?`)) {
+                STATE.history.splice(STATE.selectedIndex, 1);
+                if (STATE.selectedIndex >= STATE.history.length) STATE.selectedIndex = Math.max(0, STATE.history.length - 1);
+                saveToStorage();
+                render();
+             }
+             return;
+        }
+        
+        const list = STATE[STATE.activePanel];
+        if (!list.length) return;
+
+        if (confirm(`Delete "${list[STATE.selectedIndex].title}"?`)) {
+            list.splice(STATE.selectedIndex, 1);
+            if (STATE.selectedIndex >= list.length) STATE.selectedIndex = Math.max(0, list.length - 1);
+            saveToStorage();
+            render();
+        }
+    }
+
+    // --- Modal Logic ---
+
+    function openModal() {
+        if (STATE.activePanel === 'history') {
+            alert("History is automatic. You cannot manually add items.");
+            return;
+        }
+        if (STATE.activePanel === 'bookmarks' && STATE.bookmarks.length >= 15) {
+            alert("Bookmark limit (15) reached. Delete a bookmark to add a new one.");
+            return;
+        }
+
+        STATE.modalOpen = true;
+        modal.overlay.classList.remove('hidden');
+        modal.header.innerText = `Add to ${STATE.activePanel.toUpperCase()}`;
+        modal.title.value = '';
+        modal.url.value = '';
+        modal.msg.innerText = "Press [Enter] to save, [Esc] to cancel";
+        modal.msg.classList.remove('error');
+        modal.title.focus();
+    }
+
+    function closeModal() {
+        STATE.modalOpen = false;
+        modal.overlay.classList.add('hidden');
+    }
+
+    function saveModal() {
+        const title = modal.title.value.trim();
+        let url = modal.url.value.trim();
+
+        if (!title || !url) {
+            modal.msg.innerText = "Error: Title and URL are required.";
+            modal.msg.classList.add('error');
+            return;
+        }
+
+        if (!url.startsWith('http')) url = 'https://' + url;
+
+        STATE[STATE.activePanel].unshift({ title, url });
+        saveToStorage();
+        closeModal();
+        // Reset selection to top to see new item
+        STATE.selectedIndex = 0;
+        render();
+    }
+
+    // --- Input Handling ---
+
+    document.addEventListener('keydown', (e) => {
+        // Modal Inputs
+        if (STATE.modalOpen) {
+            if (e.key === 'Escape') closeModal();
+            if (e.key === 'Enter') saveModal();
+            return;
+        }
+
+        // Global Shortcuts
+        switch(e.key) {
+            case '?': 
+                document.getElementById('help').classList.toggle('hidden');
+                break;
+            
+            // Navigation
+            case 'ArrowDown': e.preventDefault(); moveSelection(1); break;
+            case 'ArrowUp': e.preventDefault(); moveSelection(-1); break;
+            case 'ArrowLeft': e.preventDefault(); switchPanel(-1); break;
+            case 'ArrowRight': e.preventDefault(); switchPanel(1); break;
+            case 'Enter': openLink(); break;
+
+            // Panel Switching
+            case 'b': setActivePanel('bookmarks'); break;
+            case 'i': setActivePanel('important'); break;
+            case 'h': setActivePanel('history'); break;
+
+            // Actions
+            case 'n': e.preventDefault(); openModal(); break;
+            case 'x': deleteItem(); break;
+
+            // Number Hotkeys for Bookmarks
+            default:
+                // Check for Number keys 0-9
+                if (e.key >= '0' && e.key <= '9') {
+                    // 0 selects first element
+                    const idx = e.key === '0' ? 0 : parseInt(e.key) - 1;
+                    const list = STATE[STATE.activePanel];
+                    if (list && list.length > 0) {
+                        const targetIdx = idx >= list.length ? list.length - 1 : idx;
+                        STATE.selectedIndex = targetIdx;
+                        render();
+                        if (e.ctrlKey) {
+                            openLink(targetIdx);
+                        }
+                    }
+                }
+                break;
+        }
+    });
+
+    // Initial Render
+    render();
+
+</script>
+</body>
+</html>
