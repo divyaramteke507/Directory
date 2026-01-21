@@ -487,10 +487,10 @@
                 break;
             
             // Navigation
-            case 'ArrowDown': e.preventDefault(); moveSelection(1); break;
-            case 'ArrowUp': e.preventDefault(); moveSelection(-1); break;
-            case 'ArrowLeft': e.preventDefault(); switchPanel(-1); break;
-            case 'ArrowRight': e.preventDefault(); switchPanel(1); break;
+            case 'ArrowDown': case 's': case 'S': e.preventDefault(); moveSelection(1); break;
+            case 'ArrowUp': case 'w': case 'W': e.preventDefault(); moveSelection(-1); break;
+            case 'ArrowLeft': case 'a': case 'A': e.preventDefault(); switchPanel(-1); break;
+            case 'ArrowRight': case 'd': case 'D': e.preventDefault(); switchPanel(1); break;
             case 'Enter': openLink(); break;
 
             // Panel Switching
