@@ -1,593 +1,657 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Keyboard Dashboard</title>
-    <style>
-        :root {
-            --bg: #121212;
-            --fg: #e0e0e0;
-            --accent: #00ff9d;
-            --dim: #666;
-            --warn: #ff4d4d;
-            --font: 'Courier New', Courier, monospace;
-        }
-
-        * { box-sizing: border-box; }
-
-        body {
-            background-color: var(--bg);
-            color: var(--fg);
-            font-family: var(--font);
-            margin: 0;
-            height: 100vh;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-        }
-
-        /* --- Layout --- */
-        .container {
-            display: grid;
-            grid-template-columns: 1fr 1fr 1fr;
-            height: 100%;
-            padding: 20px;
-            gap: 20px;
-        }
-
-        .panel {
-            border: 1px solid #333;
-            padding: 15px;
-            display: flex;
-            flex-direction: column;
-            overflow-y: auto;
-            position: relative;
-            background: #1a1a1a;
-            transition: border-color 0.2s, box-shadow 0.2s;
-        }
-
-        .panel.active {
-            border-color: var(--accent);
-            box-shadow: 0 0 15px rgba(0, 255, 157, 0.1);
-            z-index: 10;
-        }
-
-        h2 {
-            font-size: 1rem;
-            border-bottom: 1px solid #333;
-            margin-top: 0;
-            padding-bottom: 10px;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-            color: var(--dim);
-        }
-
-        .panel.active h2 { color: var(--accent); }
-
-        /* --- List Items --- */
-        ul { list-style: none; padding: 0; margin: 0; }
-        
-        li {
-            padding: 10px;
-            margin-bottom: 4px;
-            cursor: pointer;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-radius: 4px;
-            border: 1px solid transparent;
-        }
-
-        li.selected {
-            background-color: var(--accent);
-            color: var(--bg);
-            font-weight: bold;
-            border-color: var(--accent);
-        }
-
-        .meta { font-size: 0.75rem; color: var(--dim); margin-left: 10px; min-width: 40px; text-align: right; }
-        li.selected .meta { color: #222; opacity: 0.8; }
-
-        .shortcut-hint {
-            position: absolute;
-            top: 15px;
-            right: 15px;
-            font-size: 0.8rem;
-            color: var(--dim);
-            border: 1px solid #333;
-            padding: 2px 6px;
-            border-radius: 4px;
-        }
-        
-        .panel.active .shortcut-hint { color: var(--accent); border-color: var(--accent); }
-
-        /* --- Archive Specifics --- */
-        li.folder { font-weight: bold; color: var(--accent); }
-        li.folder.selected { color: black; }
-        li.nested { margin-left: 20px; border-left: 1px solid #333; font-size: 0.95rem; }
-
-        /* --- Modal --- */
-        #modal-overlay {
-            position: fixed;
-            top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.85);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            z-index: 100;
-            backdrop-filter: blur(2px);
-        }
-        .hidden { display: none !important; }
-        
-        #modal-box {
-            background: #1e1e1e;
-            border: 2px solid var(--accent);
-            padding: 30px;
-            width: 450px;
-            box-shadow: 0 0 30px rgba(0,0,0,0.5);
-        }
-
-        h3 { margin-top: 0; color: var(--accent); }
-
-        input {
-            width: 100%;
-            background: #2a2a2a;
-            border: 1px solid #444;
-            color: white;
-            padding: 12px;
-            margin-bottom: 15px;
-            font-family: var(--font);
-            font-size: 1rem;
-        }
-        input:focus { outline: 1px solid var(--accent); border-color: var(--accent); }
-        #input-subsection { display: none; } /* Hidden by default */
-
-        .status-msg { margin-top: 10px; font-size: 0.85rem; color: var(--dim); }
-        .error { color: var(--warn); }
-
-        /* --- Help --- */
-        #help {
-            position: fixed;
-            bottom: 20px;
-            left: 20px;
-            background: #1e1e1e;
-            padding: 15px;
-            border: 1px solid #444;
-            font-size: 0.8rem;
-            line-height: 1.5;
-            opacity: 0.9;
-            z-index: 50;
-        }
-    </style>
-</head>
-<body>
-
-    <div class="container">
-        <div id="panel-bookmarks" class="panel active">
-            <span class="shortcut-hint">[b]</span>
-            <h2>Bookmarks (<span id="bm-count">0</span>/15)</h2>
-            <ul id="list-bookmarks"></ul>
-        </div>
-
-        <div id="panel-important" class="panel">
-            <span class="shortcut-hint">[i]</span>
-            <h2>Important</h2>
-            <ul id="list-important"></ul>
-        </div>
-
-        <div id="panel-archive" class="panel">
-            <span class="shortcut-hint">[a]</span>
-            <h2>Archive</h2>
-            <ul id="list-archive"></ul>
-        </div>
-    </div>
-
-    <div id="help">
-        <strong style="color:var(--accent)">COMMANDS</strong><br>
-        [↑/↓] Navigate List<br>
-        [Enter] Open Link<br>
-        [1-9] Select Item<br>
-        [Ctrl+1-9] Open Item<br>
-        -----------------------<br>
-        [b] Focus Bookmarks<br>
-        [i] Focus Important<br>
-        [a] Focus Archive<br>
-        -----------------------<br>
-        [n] Add New Link<br>
-        [x] Delete Link<br>
-        [?] Toggle This Menu
-    </div>
-
-    <div id="modal-overlay" class="hidden">
-        <div id="modal-box">
-            <h3 id="modal-title-text">Add Link</h3>
-            <input type="text" id="input-subsection" placeholder="Subsection Name (e.g., Work)">
-            <input type="text" id="input-title" placeholder="Title (e.g., GitHub)">
-            <input type="text" id="input-url" placeholder="URL (e.g., github.com)">
-            <div class="status-msg" id="modal-msg">Press [Enter] to save, [Esc] to cancel</div>
-        </div>
-    </div>
-
-<script>
-    // --- Demo Data Generation ---
-    // This creates default data if the user has never visited before.
-    const DEMO_BOOKMARKS = [
-        { title: "Google", url: "https://google.com" },
-        { title: "YouTube", url: "https://youtube.com" },
-        { title: "GitHub", url: "https://github.com" },
-        { title: "ChatGPT", url: "https://chatgpt.com" },
-        { title: "Reddit", url: "https://reddit.com" },
-        { title: "Gmail", url: "https://mail.google.com" },
-        { title: "Twitter/X", url: "https://x.com" }
-    ];
-
-    const DEMO_IMPORTANT = [
-        { title: "Passport Renewal", url: "https://travel.state.gov" },
-        { title: "Tax Portal", url: "https://irs.gov" },
-        { title: "Emergency Contacts", url: "about:blank" },
-        { title: "Router Settings", url: "http://192.168.1.1" }
-    ];
-
-    const DEMO_ARCHIVE = [
-        { name: "Development", expanded: true, items: [{ title: "Stack Overflow", url: "https://stackoverflow.com" }, { title: "MDN", url: "https://developer.mozilla.org" }] },
-        { name: "Entertainment", expanded: false, items: [{ title: "Netflix", url: "https://netflix.com" }, { title: "Twitch", url: "https://twitch.tv" }] }
-    ];
-
-    // --- State Management ---
-    
-    // Helper to load or default
-    function loadState(key, defaultData) {
-        const stored = localStorage.getItem(key);
-        return stored ? JSON.parse(stored) : defaultData;
-    }
-
-    const STATE = {
-        bookmarks: loadState('kb_bookmarks', DEMO_BOOKMARKS),
-        important: loadState('kb_important', DEMO_IMPORTANT),
-        archive: loadState('kb_archive', DEMO_ARCHIVE),
-        activePanel: 'bookmarks', // bookmarks, important, archive
-        selectedIndex: 0,
-        modalOpen: false
-    };
-
-    // --- DOM Elements ---
-    const panels = {
-        bookmarks: document.getElementById('panel-bookmarks'),
-        important: document.getElementById('panel-important'),
-        archive: document.getElementById('panel-archive')
-    };
-    const lists = {
-        bookmarks: document.getElementById('list-bookmarks'),
-        important: document.getElementById('list-important'),
-        archive: document.getElementById('list-archive')
-    };
-    const modal = {
-        overlay: document.getElementById('modal-overlay'),
-        header: document.getElementById('modal-title-text'),
-        subsection: document.getElementById('input-subsection'),
-        title: document.getElementById('input-title'),
-        url: document.getElementById('input-url'),
-        msg: document.getElementById('modal-msg')
-    };
-
-    // --- Core Functions ---
-
-    function saveToStorage() {
-        localStorage.setItem('kb_bookmarks', JSON.stringify(STATE.bookmarks));
-        localStorage.setItem('kb_important', JSON.stringify(STATE.important));
-        localStorage.setItem('kb_archive', JSON.stringify(STATE.archive));
-    }
-
-    function render() {
-        // Update Bookmark Count
-        document.getElementById('bm-count').innerText = STATE.bookmarks.length;
-
-        // Render Lists
-        renderList('bookmarks', STATE.bookmarks);
-        renderList('important', STATE.important);
-        renderList('archive', STATE.archive);
-
-        // Update Panel Styles
-        Object.keys(panels).forEach(key => {
-            if (key === STATE.activePanel) {
-                panels[key].classList.add('active');
-            } else {
-                panels[key].classList.remove('active');
-            }
-        });
-    }
-
-    // Helper to flatten archive for rendering and navigation
-    function getVisibleItems(type) {
-        if (type !== 'archive') {
-            return STATE[type].map(item => ({ type: 'item', data: item }));
-        }
-        
-        const flat = [];
-        STATE.archive.forEach(folder => {
-            flat.push({ type: 'folder', data: folder });
-            if (folder.expanded) {
-                folder.items.forEach(link => {
-                    flat.push({ type: 'link', data: link, parent: folder });
-                });
-            }
-        });
-        return flat;
-    }
-
-    function renderList(type, data) {
-        const ul = lists[type];
-        ul.innerHTML = '';
-        
-        const items = getVisibleItems(type);
-
-        if (items.length === 0) {
-            ul.innerHTML = '<li style="color:#444; cursor:default; border:none;">(Empty)</li>';
-            return;
-        }
-
-        items.forEach((itemObj, index) => {
-            const li = document.createElement('li');
-            let content = '';
-            let meta = '';
-            
-            if (itemObj.type === 'folder') {
-                li.classList.add('folder');
-                const icon = itemObj.data.expanded ? '[-]' : '[+]';
-                content = `${icon} ${itemObj.data.name}`;
-            } else if (itemObj.type === 'link') {
-                li.classList.add('nested');
-                content = itemObj.data.title;
-            } else {
-                content = itemObj.data.title;
-                meta = index < 9 ? `[${index + 1}]` : '';
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Keyboard Dashboard</title>
+        <style>
+            :root {
+                --bg: #121212;
+                --fg: #e0e0e0;
+                --accent: #00ff9d;
+                --dim: #666;
+                --warn: #ff4d4d;
+                --font: 'Courier New', Courier, monospace;
             }
 
-            li.innerHTML = `<span>${content}</span> <span class="meta">${meta}</span>`;
+            * { box-sizing: border-box; }
+
+            body {
+                background-color: var(--bg);
+                color: var(--fg);
+                font-family: var(--font);
+                margin: 0;
+                height: 100vh;
+                display: flex;
+                flex-direction: column;
+                overflow: hidden;
+            }
+
+            /* --- Layout --- */
+            .container {
+                display: grid;
+                grid-template-columns: 1fr 1fr 1fr;
+                height: 100%;
+                padding: 20px;
+                gap: 20px;
+            }
+
+            .panel {
+                border: 1px solid #333;
+                padding: 15px;
+                display: flex;
+                flex-direction: column;
+                overflow-y: auto;
+                position: relative;
+                background: #1a1a1a;
+                transition: border-color 0.2s, box-shadow 0.2s;
+            }
+
+            .panel.active {
+                border-color: var(--accent);
+                box-shadow: 0 0 15px rgba(0, 255, 157, 0.1);
+                z-index: 10;
+            }
+
+            h2 {
+                font-size: 1rem;
+                border-bottom: 1px solid #333;
+                margin-top: 0;
+                padding-bottom: 10px;
+                text-transform: uppercase;
+                letter-spacing: 2px;
+                color: var(--dim);
+            }
+
+            .panel.active h2 { color: var(--accent); }
+
+            /* --- List Items --- */
+            ul { list-style: none; padding: 0; margin: 0; }
             
-            if (STATE.activePanel === type && STATE.selectedIndex === index) {
-                li.classList.add('selected');
-                li.scrollIntoView({ block: "nearest" });
+            li {
+                padding: 10px;
+                margin-bottom: 4px;
+                cursor: pointer;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                border-radius: 4px;
+                border: 1px solid transparent;
+            }
+
+            li.selected {
+                background-color: var(--accent);
+                color: var(--bg);
+                font-weight: bold;
+                border-color: var(--accent);
+            }
+
+            .meta { font-size: 0.75rem; color: var(--dim); margin-left: 10px; min-width: 40px; text-align: right; }
+            li.selected .meta { color: #222; opacity: 0.8; }
+
+            .shortcut-hint {
+                position: absolute;
+                top: 15px;
+                right: 15px;
+                font-size: 0.8rem;
+                color: var(--dim);
+                border: 1px solid #333;
+                padding: 2px 6px;
+                border-radius: 4px;
             }
             
-            // Mouse click support
-            li.onclick = () => {
-                STATE.activePanel = type;
-                STATE.selectedIndex = index;
-                openLink(index);
-            };
+            .panel.active .shortcut-hint { color: var(--accent); border-color: var(--accent); }
+
+            /* --- Archive Specifics --- */
+            li.folder { font-weight: bold; color: var(--accent); }
+            li.folder.selected { color: black; }
+            li.nested { margin-left: 20px; border-left: 1px solid #333; font-size: 0.95rem; }
+
+            /* --- Modal --- */
+            #modal-overlay {
+                position: fixed;
+                top: 0; left: 0; width: 100%; height: 100%;
+                background: rgba(0,0,0,0.85);
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                z-index: 100;
+                backdrop-filter: blur(2px);
+            }
+            .hidden { display: none !important; }
             
-            ul.appendChild(li);
-        });
-    }
+            #modal-box {
+                background: #1e1e1e;
+                border: 2px solid var(--accent);
+                padding: 30px;
+                width: 450px;
+                box-shadow: 0 0 30px rgba(0,0,0,0.5);
+            }
 
-    // --- Logic ---
+            h3 { margin-top: 0; color: var(--accent); }
 
-    function setActivePanel(panelName) {
-        STATE.activePanel = panelName;
-        STATE.selectedIndex = 0;
-        render();
-    }
+            input {
+                width: 100%;
+                background: #2a2a2a;
+                border: 1px solid #444;
+                color: white;
+                padding: 12px;
+                margin-bottom: 15px;
+                font-family: var(--font);
+                font-size: 1rem;
+            }
+            input:focus { outline: 1px solid var(--accent); border-color: var(--accent); }
+            #input-subsection { display: none; } /* Hidden by default */
 
-    function switchPanel(direction) {
-        const order = ['bookmarks', 'important', 'archive'];
-        let idx = order.indexOf(STATE.activePanel);
-        idx += direction;
-        if (idx < 0) idx = order.length - 1;
-        if (idx >= order.length) idx = 0;
-        setActivePanel(order[idx]);
-    }
+            .status-msg { margin-top: 10px; font-size: 0.85rem; color: var(--dim); }
+            .error { color: var(--warn); }
 
-    function moveSelection(direction) {
-        const items = getVisibleItems(STATE.activePanel);
-        if (!items.length) return;
+            /* --- Help --- */
+            #help {
+                position: fixed;
+                bottom: 20px;
+                left: 20px;
+                background: #1e1e1e;
+                padding: 15px;
+                border: 1px solid #444;
+                font-size: 0.8rem;
+                line-height: 1.5;
+                opacity: 0.9;
+                z-index: 50;
+            }
+        </style>
+    </head>
+    <body>
 
-        STATE.selectedIndex += direction;
+        <div class="container">
+            <div id="panel-bookmarks" class="panel active">
+                <span class="shortcut-hint">[b]</span>
+                <h2>Bookmarks (<span id="bm-count">0</span>/15)</h2>
+                <ul id="list-bookmarks"></ul>
+            </div>
+
+            <div id="panel-important" class="panel">
+                <span class="shortcut-hint">[i]</span>
+                <h2>Important</h2>
+                <ul id="list-important"></ul>
+            </div>
+
+            <div id="panel-archive" class="panel">
+                <span class="shortcut-hint">[a]</span>
+                <h2>Archive</h2>
+                <ul id="list-archive"></ul>
+            </div>
+        </div>
+
+        <div id="help">
+            <strong style="color:var(--accent)">COMMANDS</strong><br>
+            [↑/↓] Navigate List<br>
+            [Alt+↑/↓] Move Item<br>
+            [Enter] Open Link<br>
+            [1-9] Select Item<br>
+            [Alt+1-9] Open Item<br>
+            -----------------------<br>
+            [b] Focus Bookmarks<br>
+            [i] Focus Important<br>
+            [a] Focus Archive<br>
+            -----------------------<br>
+            [n] Add New Link<br>
+            [x] Delete Link<br>
+            [?] Toggle This Menu
+        </div>
+
+        <div id="modal-overlay" class="hidden">
+            <div id="modal-box">
+                <h3 id="modal-title-text">Add Link</h3>
+                <input type="text" id="input-subsection" placeholder="Subsection Name (e.g., Work)">
+                <input type="text" id="input-title" placeholder="Title (e.g., GitHub)">
+                <input type="text" id="input-url" placeholder="URL (e.g., github.com)">
+                <div class="status-msg" id="modal-msg">Press [Enter] to save, [Esc] to cancel</div>
+            </div>
+        </div>
+
+    <script>
+        // --- Demo Data Generation ---
+        // This creates default data if the user has never visited before.
+        const DEMO_BOOKMARKS = [
+            { title: "Google", url: "https://google.com" },
+            { title: "YouTube", url: "https://youtube.com" },
+            { title: "GitHub", url: "https://github.com" },
+            { title: "ChatGPT", url: "https://chatgpt.com" },
+            { title: "Reddit", url: "https://reddit.com" },
+            { title: "Gmail", url: "https://mail.google.com" },
+            { title: "Twitter/X", url: "https://x.com" }
+        ];
+
+        const DEMO_IMPORTANT = [
+            { title: "Passport Renewal", url: "https://travel.state.gov" },
+            { title: "Tax Portal", url: "https://irs.gov" },
+            { title: "Emergency Contacts", url: "about:blank" },
+            { title: "Router Settings", url: "http://192.168.1.1" }
+        ];
+
+        const DEMO_ARCHIVE = [
+            { name: "Development", expanded: true, items: [{ title: "Stack Overflow", url: "https://stackoverflow.com" }, { title: "MDN", url: "https://developer.mozilla.org" }] },
+            { name: "Entertainment", expanded: false, items: [{ title: "Netflix", url: "https://netflix.com" }, { title: "Twitch", url: "https://twitch.tv" }] }
+        ];
+
+        // --- State Management ---
         
-        // Loop around
-        if (STATE.selectedIndex < 0) STATE.selectedIndex = items.length - 1;
-        if (STATE.selectedIndex >= items.length) STATE.selectedIndex = 0;
-        
-        render();
-    }
-
-    function openLink(index = STATE.selectedIndex) {
-        const items = getVisibleItems(STATE.activePanel);
-        if (!items[index]) return;
-
-        const itemObj = items[index];
-
-        if (itemObj.type === 'folder') {
-            // Toggle Folder
-            itemObj.data.expanded = !itemObj.data.expanded;
-            saveToStorage();
-        } else {
-            // Open Link
-            window.open(itemObj.data.url, '_blank');
+        // Helper to load or default
+        function loadState(key, defaultData) {
+            const stored = localStorage.getItem(key);
+            return stored ? JSON.parse(stored) : defaultData;
         }
-        render(); 
-    }
 
-    function deleteItem() {
-        const items = getVisibleItems(STATE.activePanel);
-        if (!items.length) return;
-        
-        const itemObj = items[STATE.selectedIndex];
+        const STATE = {
+            bookmarks: loadState('kb_bookmarks', DEMO_BOOKMARKS),
+            important: loadState('kb_important', DEMO_IMPORTANT),
+            archive: loadState('kb_archive', DEMO_ARCHIVE),
+            activePanel: 'bookmarks', // bookmarks, important, archive
+            selectedIndex: 0,
+            modalOpen: false
+        };
 
-        if (STATE.activePanel === 'archive') {
-            const name = itemObj.type === 'folder' ? itemObj.data.name : itemObj.data.title;
-            if (confirm(`Delete "${name}"?`)) {
-                if (itemObj.type === 'folder') {
-                    // Remove folder from STATE.archive
-                    const idx = STATE.archive.indexOf(itemObj.data);
-                    if (idx > -1) STATE.archive.splice(idx, 1);
-                } else if (itemObj.type === 'link') {
-                    // Remove link from parent folder
-                    const idx = itemObj.parent.items.indexOf(itemObj.data);
-                    if (idx > -1) itemObj.parent.items.splice(idx, 1);
+        // --- DOM Elements ---
+        const panels = {
+            bookmarks: document.getElementById('panel-bookmarks'),
+            important: document.getElementById('panel-important'),
+            archive: document.getElementById('panel-archive')
+        };
+        const lists = {
+            bookmarks: document.getElementById('list-bookmarks'),
+            important: document.getElementById('list-important'),
+            archive: document.getElementById('list-archive')
+        };
+        const modal = {
+            overlay: document.getElementById('modal-overlay'),
+            header: document.getElementById('modal-title-text'),
+            subsection: document.getElementById('input-subsection'),
+            title: document.getElementById('input-title'),
+            url: document.getElementById('input-url'),
+            msg: document.getElementById('modal-msg')
+        };
+
+        // --- Core Functions ---
+
+        function saveToStorage() {
+            localStorage.setItem('kb_bookmarks', JSON.stringify(STATE.bookmarks));
+            localStorage.setItem('kb_important', JSON.stringify(STATE.important));
+            localStorage.setItem('kb_archive', JSON.stringify(STATE.archive));
+        }
+
+        function render() {
+            // Update Bookmark Count
+            document.getElementById('bm-count').innerText = STATE.bookmarks.length;
+
+            // Render Lists
+            renderList('bookmarks', STATE.bookmarks);
+            renderList('important', STATE.important);
+            renderList('archive', STATE.archive);
+
+            // Update Panel Styles
+            Object.keys(panels).forEach(key => {
+                if (key === STATE.activePanel) {
+                    panels[key].classList.add('active');
+                } else {
+                    panels[key].classList.remove('active');
                 }
-                saveToStorage();
-                STATE.selectedIndex = Math.max(0, STATE.selectedIndex - 1);
-                render();
-            }
-            return;
-        }
-        
-        const list = STATE[STATE.activePanel];
-        if (!list.length) return;
-
-        if (confirm(`Delete "${list[STATE.selectedIndex].title}"?`)) {
-            list.splice(STATE.selectedIndex, 1);
-            if (STATE.selectedIndex >= list.length) STATE.selectedIndex = Math.max(0, list.length - 1);
-            saveToStorage();
-            render();
-        }
-    }
-
-    // --- Modal Logic ---
-
-    function openModal() {
-        if (STATE.activePanel === 'bookmarks' && STATE.bookmarks.length >= 15) {
-            alert("Bookmark limit (15) reached. Delete a bookmark to add a new one.");
-            return;
+            });
         }
 
-        STATE.modalOpen = true;
-        modal.overlay.classList.remove('hidden');
-        modal.header.innerText = `Add to ${STATE.activePanel.toUpperCase()}`;
-        
-        // Reset fields
-        modal.subsection.value = '';
-        modal.title.value = '';
-        modal.url.value = '';
-        
-        // Archive specific UI
-        if (STATE.activePanel === 'archive') {
-            modal.subsection.style.display = 'block';
-            // Try to pre-fill subsection if a folder or link is selected
-            const items = getVisibleItems('archive');
-            if (items.length > 0) {
-                const current = items[STATE.selectedIndex];
-                if (current.type === 'folder') modal.subsection.value = current.data.name;
-                if (current.type === 'link') modal.subsection.value = current.parent.name;
+        // Helper to flatten archive for rendering and navigation
+        function getVisibleItems(type) {
+            if (type !== 'archive') {
+                return STATE[type].map(item => ({ type: 'item', data: item }));
             }
-            modal.subsection.focus();
-        } else {
-            modal.subsection.style.display = 'none';
-            modal.title.focus();
-        }
-
-        modal.msg.innerText = "Press [Enter] to save, [Esc] to cancel";
-        modal.msg.classList.remove('error');
-    }
-
-    function closeModal() {
-        STATE.modalOpen = false;
-        modal.overlay.classList.add('hidden');
-    }
-
-    function saveModal() {
-        const title = modal.title.value.trim();
-        let url = modal.url.value.trim();
-
-        if (STATE.activePanel === 'archive') {
-            const subName = modal.subsection.value.trim();
-            if (!subName) {
-                modal.msg.innerText = "Error: Subsection Name is required.";
-                modal.msg.classList.add('error');
-                return;
-            }
-
-            // Find or create folder
-            let folder = STATE.archive.find(f => f.name === subName);
-            if (!folder) {
-                folder = { name: subName, expanded: true, items: [] };
-                STATE.archive.unshift(folder);
-            }
-
-            // If Title/URL provided, add link
-            if (title && url) {
-                if (!url.startsWith('http')) url = 'https://' + url;
-                folder.items.unshift({ title, url });
-                folder.expanded = true;
-            } else if (title || url) {
-                 modal.msg.innerText = "Error: Both Title and URL required for a link.";
-                 modal.msg.classList.add('error');
-                 return;
-            }
-        } else {
-            if (!title || !url) {
-                modal.msg.innerText = "Error: Title and URL are required.";
-                modal.msg.classList.add('error');
-                return;
-            }
-            if (!url.startsWith('http')) url = 'https://' + url;
-            STATE[STATE.activePanel].unshift({ title, url });
-        }
-
-        saveToStorage();
-        closeModal();
-        // Reset selection to top to see new item
-        STATE.selectedIndex = 0;
-        render();
-    }
-
-    // --- Input Handling ---
-
-    document.addEventListener('keydown', (e) => {
-        // Modal Inputs
-        if (STATE.modalOpen) {
-            if (e.key === 'Escape') closeModal();
-            if (e.key === 'Enter') saveModal();
-            return;
-        }
-
-        // Global Shortcuts
-        switch(e.key) {
-            case '?': 
-                document.getElementById('help').classList.toggle('hidden');
-                break;
             
-            // Navigation
-            case 'ArrowDown': case 's': case 'S': e.preventDefault(); moveSelection(1); break;
-            case 'ArrowUp': case 'w': case 'W': e.preventDefault(); moveSelection(-1); break;
-            case 'ArrowLeft': case 'a': case 'A': e.preventDefault(); switchPanel(-1); break;
-            case 'ArrowRight': case 'd': case 'D': e.preventDefault(); switchPanel(1); break;
-            case 'Enter': openLink(); break;
-
-            // Panel Switching
-            case 'b': setActivePanel('bookmarks'); break;
-            case 'i': setActivePanel('important'); break;
-            case 'a': setActivePanel('archive'); break;
-
-            // Actions
-            case 'n': e.preventDefault(); openModal(); break;
-            case 'x': deleteItem(); break;
-
-            // Number Hotkeys for Bookmarks
-            default:
-                // Check for Number keys 0-9
-                if (e.key >= '0' && e.key <= '9') {
-                    // 0 selects first element
-                    const idx = e.key === '0' ? 0 : parseInt(e.key) - 1;
-                    const list = STATE[STATE.activePanel];
-                    if (list && list.length > 0) {
-                        const targetIdx = idx >= list.length ? list.length - 1 : idx;
-                        STATE.selectedIndex = targetIdx;
-                        render();
-                        if (e.altKey) {
-                            openLink(targetIdx);
-                        }
+            const flat = [];
+            STATE.archive.forEach(folder => {
+                flat.push({ type: 'folder', data: folder });
+                if (folder.expanded) {
+                    if (folder.items.length === 0) {
+                        flat.push({ type: 'empty', parent: folder });
+                    } else {
+                        folder.items.forEach(link => {
+                            flat.push({ type: 'link', data: link, parent: folder });
+                        });
                     }
                 }
-                break;
+            });
+            return flat;
         }
-    });
 
-    // Initial Render
-    render();
+        function renderList(type, data) {
+            const ul = lists[type];
+            ul.innerHTML = '';
+            
+            const items = getVisibleItems(type);
 
-</script>
-</body>
-</html>
+            if (items.length === 0) {
+                ul.innerHTML = '<li style="color:#444; cursor:default; border:none;">(Empty)</li>';
+                return;
+            }
+
+            items.forEach((itemObj, index) => {
+                const li = document.createElement('li');
+                let content = '';
+                let meta = '';
+                
+                if (itemObj.type === 'folder') {
+                    li.classList.add('folder');
+                    const icon = itemObj.data.expanded ? '[-]' : '[+]';
+                    content = `${icon} ${itemObj.data.name}`;
+                } else if (itemObj.type === 'link') {
+                    li.classList.add('nested');
+                    content = itemObj.data.title;
+                } else if (itemObj.type === 'empty') {
+                    li.classList.add('nested');
+                    li.style.color = 'var(--dim)';
+                    li.style.fontStyle = 'italic';
+                    content = '(Folder is Empty)';
+                } else {
+                    content = itemObj.data.title;
+                    meta = index < 9 ? `[${index + 1}]` : '';
+                }
+
+                li.innerHTML = `<span>${content}</span> <span class="meta">${meta}</span>`;
+                
+                if (STATE.activePanel === type && STATE.selectedIndex === index) {
+                    li.classList.add('selected');
+                    li.scrollIntoView({ block: "nearest" });
+                }
+                
+                // Mouse click support
+                li.onclick = () => {
+                    STATE.activePanel = type;
+                    STATE.selectedIndex = index;
+                    openLink(index);
+                };
+                
+                ul.appendChild(li);
+            });
+        }
+
+        // --- Logic ---
+
+        function setActivePanel(panelName) {
+            STATE.activePanel = panelName;
+            STATE.selectedIndex = 0;
+            render();
+        }
+
+        function switchPanel(direction) {
+            const order = ['bookmarks', 'important', 'archive'];
+            let idx = order.indexOf(STATE.activePanel);
+            idx += direction;
+            if (idx < 0) idx = order.length - 1;
+            if (idx >= order.length) idx = 0;
+            setActivePanel(order[idx]);
+        }
+
+        function moveSelection(direction) {
+            const items = getVisibleItems(STATE.activePanel);
+            if (!items.length) return;
+
+            STATE.selectedIndex += direction;
+            
+            // Loop around
+            if (STATE.selectedIndex < 0) STATE.selectedIndex = items.length - 1;
+            if (STATE.selectedIndex >= items.length) STATE.selectedIndex = 0;
+            
+            render();
+        }
+
+        function moveItem(direction) {
+            const items = getVisibleItems(STATE.activePanel);
+            if (!items.length) return;
+            
+            const currentItem = items[STATE.selectedIndex];
+            const currentData = currentItem.data;
+
+            if (STATE.activePanel === 'archive') {
+                if (currentItem.type === 'folder') {
+                    const idx = STATE.archive.indexOf(currentData);
+                    const newIdx = idx + direction;
+                    if (newIdx >= 0 && newIdx < STATE.archive.length) {
+                        [STATE.archive[idx], STATE.archive[newIdx]] = [STATE.archive[newIdx], STATE.archive[idx]];
+                    }
+                } else if (currentItem.type === 'link') {
+                    const parent = currentItem.parent;
+                    const idx = parent.items.indexOf(currentData);
+                    const newIdx = idx + direction;
+                    if (newIdx >= 0 && newIdx < parent.items.length) {
+                        [parent.items[idx], parent.items[newIdx]] = [parent.items[newIdx], parent.items[idx]];
+                    }
+                }
+            } else {
+                const list = STATE[STATE.activePanel];
+                const idx = STATE.selectedIndex;
+                const newIdx = idx + direction;
+                if (newIdx >= 0 && newIdx < list.length) {
+                    [list[idx], list[newIdx]] = [list[newIdx], list[idx]];
+                }
+            }
+
+            saveToStorage();
+            
+            // Restore selection to the moved item
+            const newItems = getVisibleItems(STATE.activePanel);
+            STATE.selectedIndex = newItems.findIndex(i => i.data === currentData);
+            render();
+        }
+
+        function openLink(index = STATE.selectedIndex) {
+            const items = getVisibleItems(STATE.activePanel);
+            if (!items[index]) return;
+
+            const itemObj = items[index];
+
+            if (itemObj.type === 'folder') {
+                // Toggle Folder
+                itemObj.data.expanded = !itemObj.data.expanded;
+                saveToStorage();
+            } else if (itemObj.type !== 'empty') {
+                // Open Link
+                window.open(itemObj.data.url, '_blank');
+            }
+            render(); 
+        }
+
+        function deleteItem() {
+            const items = getVisibleItems(STATE.activePanel);
+            if (!items.length) return;
+            
+            const itemObj = items[STATE.selectedIndex];
+            if (itemObj.type === 'empty') return;
+
+            if (STATE.activePanel === 'archive') {
+                const name = itemObj.type === 'folder' ? itemObj.data.name : itemObj.data.title;
+                if (confirm(`Delete "${name}"?`)) {
+                    if (itemObj.type === 'folder') {
+                        // Remove folder from STATE.archive
+                        const idx = STATE.archive.indexOf(itemObj.data);
+                        if (idx > -1) STATE.archive.splice(idx, 1);
+                    } else if (itemObj.type === 'link') {
+                        // Remove link from parent folder
+                        const idx = itemObj.parent.items.indexOf(itemObj.data);
+                        if (idx > -1) itemObj.parent.items.splice(idx, 1);
+                    }
+                    saveToStorage();
+                    STATE.selectedIndex = Math.max(0, STATE.selectedIndex - 1);
+                    render();
+                }
+                return;
+            }
+            
+            const list = STATE[STATE.activePanel];
+            if (!list.length) return;
+
+            if (confirm(`Delete "${list[STATE.selectedIndex].title}"?`)) {
+                list.splice(STATE.selectedIndex, 1);
+                if (STATE.selectedIndex >= list.length) STATE.selectedIndex = Math.max(0, list.length - 1);
+                saveToStorage();
+                render();
+            }
+        }
+
+        // --- Modal Logic ---
+
+        function openModal() {
+            if (STATE.activePanel === 'bookmarks' && STATE.bookmarks.length >= 15) {
+                alert("Bookmark limit (15) reached. Delete a bookmark to add a new one.");
+                return;
+            }
+
+            STATE.modalOpen = true;
+            modal.overlay.classList.remove('hidden');
+            modal.header.innerText = `Add to ${STATE.activePanel.toUpperCase()}`;
+            
+            // Reset fields
+            modal.subsection.value = '';
+            modal.title.value = '';
+            modal.url.value = '';
+            
+            // Archive specific UI
+            if (STATE.activePanel === 'archive') {
+                modal.subsection.style.display = 'block';
+                // Try to pre-fill subsection if a folder or link is selected
+                const items = getVisibleItems('archive');
+                if (items.length > 0) {
+                    const current = items[STATE.selectedIndex];
+                    if (current.type === 'folder') modal.subsection.value = current.data.name;
+                    if (current.type === 'link' || current.type === 'empty') modal.subsection.value = current.parent.name;
+                }
+                modal.subsection.focus();
+            } else {
+                modal.subsection.style.display = 'none';
+                modal.title.focus();
+            }
+
+            modal.msg.innerText = "Press [Enter] to save, [Esc] to cancel";
+            modal.msg.classList.remove('error');
+        }
+
+        function closeModal() {
+            STATE.modalOpen = false;
+            modal.overlay.classList.add('hidden');
+        }
+
+        function saveModal() {
+            const title = modal.title.value.trim();
+            let url = modal.url.value.trim();
+
+            if (STATE.activePanel === 'archive') {
+                const subName = modal.subsection.value.trim();
+                if (!subName) {
+                    modal.msg.innerText = "Error: Subsection Name is required.";
+                    modal.msg.classList.add('error');
+                    return;
+                }
+
+                // Find or create folder
+                let folder = STATE.archive.find(f => f.name === subName);
+                if (!folder) {
+                    folder = { name: subName, expanded: true, items: [] };
+                    STATE.archive.unshift(folder);
+                }
+
+                // If Title/URL provided, add link
+                if (title && url) {
+                    if (!url.startsWith('http')) url = 'https://' + url;
+                    folder.items.unshift({ title, url });
+                    folder.expanded = true;
+                } else if (title || url) {
+                    modal.msg.innerText = "Error: Both Title and URL required for a link.";
+                    modal.msg.classList.add('error');
+                    return;
+                }
+            } else {
+                if (!title || !url) {
+                    modal.msg.innerText = "Error: Title and URL are required.";
+                    modal.msg.classList.add('error');
+                    return;
+                }
+                if (!url.startsWith('http')) url = 'https://' + url;
+                STATE[STATE.activePanel].unshift({ title, url });
+            }
+
+            saveToStorage();
+            closeModal();
+            // Reset selection to top to see new item
+            STATE.selectedIndex = 0;
+            render();
+        }
+
+        // --- Input Handling ---
+
+        document.addEventListener('keydown', (e) => {
+            // Modal Inputs
+            if (STATE.modalOpen) {
+                if (e.key === 'Escape') closeModal();
+                if (e.key === 'Enter') saveModal();
+                return;
+            }
+
+            // Move Items
+            if (e.altKey) {
+                if (['ArrowUp', 'w', 'W'].includes(e.key)) {
+                    e.preventDefault();
+                    moveItem(-1);
+                    return;
+                }
+                if (['ArrowDown', 's', 'S'].includes(e.key)) {
+                    e.preventDefault();
+                    moveItem(1);
+                    return;
+                }
+            }
+
+            // Global Shortcuts
+            switch(e.key) {
+                case '?': 
+                    document.getElementById('help').classList.toggle('hidden');
+                    break;
+                
+                // Navigation
+                case 'ArrowDown': case 's': case 'S': e.preventDefault(); moveSelection(1); break;
+                case 'ArrowUp': case 'w': case 'W': e.preventDefault(); moveSelection(-1); break;
+                case 'ArrowLeft': case 'a': case 'A': e.preventDefault(); switchPanel(-1); break;
+                case 'ArrowRight': case 'd': case 'D': e.preventDefault(); switchPanel(1); break;
+                case 'Enter': openLink(); break;
+
+                // Panel Switching
+                case 'b': setActivePanel('bookmarks'); break;
+                case 'i': setActivePanel('important'); break;
+                case 'a': setActivePanel('archive'); break;
+
+                // Actions
+                case 'n': e.preventDefault(); openModal(); break;
+                case 'x': deleteItem(); break;
+
+                // Number Hotkeys for Bookmarks
+                default:
+                    // Check for Number keys 0-9
+                    if (e.key >= '0' && e.key <= '9') {
+                        // 0 selects first element
+                        const idx = e.key === '0' ? 0 : parseInt(e.key) - 1;
+                        const list = STATE[STATE.activePanel];
+                        if (list && list.length > 0) {
+                            const targetIdx = idx >= list.length ? list.length - 1 : idx;
+                            STATE.selectedIndex = targetIdx;
+                            render();
+                            if (e.altKey) {
+                                openLink(targetIdx);
+                            }
+                        }
+                    }
+                    break;
+            }
+        });
+
+        // Initial Render
+        render();
+
+    </script>
+    </body>
+    </html>
